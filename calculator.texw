@@ -1,0 +1,274 @@
+\documentclass[a4paper,10pt,final]{article}
+\usepackage[pdftex]{hyperref}
+\usepackage{graphicx}
+\usepackage{eurosym}
+
+\begin{document}
+
+\title{Birthday account results}
+\author{Created by \href{http://github.com/robomod/birthday-account-membership-fee-calculator}{birthday-account-membership-fee-calculator}}
+
+\maketitle
+
+<<echo = False>>=
+import datetime
+import csv
+from itertools import islice
+import matplotlib.pyplot as plt
+import matplotlib
+import math
+
+year = 2014
+
+fmt = matplotlib.dates.DateFormatter('%Y-%m-%d')
+loc = matplotlib.dates.MonthLocator()
+
+carry_over = 529.39
+
+distance_purchasing = datetime.timedelta(days=14)
+distance_deposit_others = datetime.timedelta(days=14)
+dom_deposit_members = 15
+expenses_per_member = 10
+
+# variables
+birthdays_members = {}
+birthdays_others = {}
+transfers = {}
+account_balance = {}
+
+# load birthdays
+birthdays_reader = csv.reader(open("birthdays_members.csv", "r"), delimiter=' ')
+for row in birthdays_reader:
+    if(row[0][0] != '#'):
+        birthdays_members[row[0]] = datetime.date(year, int(row[1]), int(row[2]))
+birthdays_reader = csv.reader(open("birthdays_others.csv", "r"), delimiter=' ')
+for row in birthdays_reader:
+    if(row[0][0] != '#'):
+        birthdays_members[row[0]] = datetime.date(year, int(row[1]), int(row[2]))
+
+# add transfers for gifts
+for key in birthdays_members:
+    transfers[birthdays_members[key] - distance_purchasing] = -expenses_per_member*(len(birthdays_members) + len(birthdays_others))
+    transfers[birthdays_members[key] + distance_deposit_others] = expenses_per_member*len(birthdays_others)
+
+# sort transfer keys by date
+transfers_keys = transfers.keys()
+transfers_keys.sort()
+
+# calc account balance
+account_balance[datetime.date(year-1, 12, 31)] = carry_over
+value = carry_over
+for key in transfers_keys:
+    value = value + transfers[key]
+    account_balance[key] = value
+@
+
+\section{Parameters}
+The following calculations are based on these values:
+\begin{itemize}
+    \item carry over = \EUR{<% print carry_over %>}
+    \item distance for gift purchasing before birthday = <% print distance_purchasing %>
+    \item distance for deposit of others (not members) after birthday = <% print distance_deposit_others %>
+    \item day of month for members deposits = <% print dom_deposit_members %>
+    \item expense for gifts per birthday an member = \EUR{<% print expenses_per_member %>}
+\end{itemize}
+
+\section{Account balance without fees}
+Without any input from the members the account balance behaves like in figure \ref{fig:balancewithout}.
+
+<<fig = True, echo = False, width = '12cm', caption="Account balance without any fees", label="balancewithout">>=
+plt.plot_date(matplotlib.dates.date2num(transfers_keys), map(account_balance.get, transfers_keys), 'b.-', xdate=True)
+plt.xlabel("Date")
+plt.ylabel(u'Value [\u20AC]')
+plt.grid(True)
+
+ax = plt.axes()
+ax.xaxis.set_major_formatter(fmt)
+ax.xaxis.set_major_locator(loc)
+ax.set_xlim(datetime.date(year, 1, 1), datetime.date(year, 12, 31))
+
+fig = plt.figure(1)
+fig.autofmt_xdate()
+
+plt.show()
+@
+
+<<echo = False>>=
+# calc fee per member
+minimal_balance_date = transfers_keys[0]
+minimal_balance = account_balance[minimal_balance_date]
+for key in transfers_keys:
+    if account_balance[key] < minimal_balance:
+        minimal_balance_date = key
+        minimal_balance = account_balance[key]
+
+membership_fee = 0
+if minimal_balance < 0:
+    membership_fee = abs(minimal_balance)/((minimal_balance_date.month-1)*len(birthdays_members))
+@
+
+\section{Transfers and account balance with minimal fees}
+The minimal account balance in <% print year %> is \EUR{<% print '%.2f' % minimal_balance %>}. As a consequence, the membership
+fee to stay in the black has to be {\textbf{\EUR{<% print '%.2f' % membership_fee %>}}. The transfers and account balance with
+fees are shown in figure \ref{fig:transferswithminimal} and figure \ref{fig:balancewithminimal}.
+
+<<echo = False>>=
+# copy base transfers
+transfers_exact = transfers
+
+# add transfers for fees
+for month in range(1,12):
+    transfers_exact[datetime.date(year, month, dom_deposit_members)] = membership_fee*len(birthdays_members)
+
+# sort transfer keys by date (again, cause added more)
+transfers_keys = transfers_exact.keys()
+transfers_keys.sort()
+
+# re-calc account balance
+account_balance[datetime.date(year-1, 12, 31)] = carry_over
+value = carry_over
+for key in transfers_keys:
+    value = value + transfers_exact[key]
+    account_balance[key] = value
+@
+
+<<fig = True, echo = False, width = '12cm', caption="Transfers with minimal fees", label='transferswithminimal'>>=
+plt.bar(transfers_keys, map(transfers_exact.get, transfers_keys)) #, 'b.-', xdate=True)
+plt.xlabel("Date")
+plt.ylabel(u'Value [\u20AC]')
+plt.grid(True)
+ax = plt.axes()
+ax.xaxis.set_major_formatter(fmt)
+ax.xaxis.set_major_locator(loc)
+ax.set_xlim(datetime.date(year, 1, 1), datetime.date(year, 12, 31))
+fig = plt.figure(1)
+fig.autofmt_xdate()
+plt.show()
+@
+
+<<fig = True, echo = False, width = '12cm', caption="Account balance with minimal fees", label='balancewithminimal'>>=
+plt.plot_date(transfers_keys, map(account_balance.get, transfers_keys), 'b.-', xdate=True)
+plt.xlabel("Date")
+plt.ylabel(u'Value [\u20AC]')
+plt.grid(True)
+ax = plt.axes()
+ax.xaxis.set_major_formatter(fmt)
+ax.xaxis.set_major_locator(loc)
+ax.set_xlim(datetime.date(year, 1, 1), datetime.date(year, 12, 31))
+fig = plt.figure(1)
+fig.autofmt_xdate()
+plt.show()
+@
+
+<<echo = False>>=
+membership_fee = math.ceil(membership_fee)
+
+# copy base transfers
+transfers_round = transfers
+
+# add transfers for fees
+for month in range(1,12):
+    transfers_round[datetime.date(year, month, dom_deposit_members)] = membership_fee*len(birthdays_members)
+
+# sort transfer keys by date (again, cause added more)
+transfers_keys = transfers_round.keys()
+transfers_keys.sort()
+
+# re-calc account balance
+account_balance[datetime.date(year-1, 12, 31)] = carry_over
+value = carry_over
+for key in transfers_keys:
+    value = value + transfers_round[key]
+    account_balance[key] = value
+@
+
+\section{Account balance with round fees}
+To be save we propose to round the minimal fee to \EUR{<% print '%.2f' % membership_fee %>}. This results in 
+\EUR{<% print '%.2f' % account_balance[transfers_keys[len(transfers_keys)-1]] %>} at the end of the year.
+
+<<fig = True, echo = False, width = '12cm', caption="Account balance with round fees", label="balancewithround">>=
+plt.plot_date(matplotlib.dates.date2num(transfers_keys), map(account_balance.get, transfers_keys), 'b.-', xdate=True)
+plt.xlabel("Date")
+plt.ylabel(u'Value [\u20AC]')
+plt.grid(True)
+ax = plt.axes()
+ax.xaxis.set_major_formatter(fmt)
+ax.xaxis.set_major_locator(loc)
+ax.set_xlim(datetime.date(year, 1, 1), datetime.date(year, 12, 31))
+fig = plt.figure(1)
+fig.autofmt_xdate()
+plt.show()
+@
+
+<<echo = False>>=
+# copy base transfers
+transfers_2years = transfers
+
+# add transfers for gifts in second year
+for key in birthdays_members:
+    transfers_2years[birthdays_members[key] - distance_purchasing + datetime.timedelta(days=365)] = -expenses_per_member*(len(birthdays_members) + len(birthdays_others))
+    transfers_2years[birthdays_members[key] + distance_deposit_others + datetime.timedelta(days=365)] = expenses_per_member*len(birthdays_others)
+
+# sort transfer keys by date (again, cause added more)
+transfers_keys = transfers_2years.keys()
+transfers_keys.sort()
+
+# re-calc account balance
+account_balance[datetime.date(year-1, 12, 31)] = carry_over
+value = carry_over
+for key in transfers_keys:
+    value = value + transfers_2years[key]
+    account_balance[key] = value
+    
+# calc fee per member
+minimal_balance_date = transfers_keys[0]
+minimal_balance = account_balance[minimal_balance_date]
+for key in transfers_keys:
+    if account_balance[key] < minimal_balance:
+        minimal_balance_date = key
+        minimal_balance = account_balance[key]
+
+membership_fee = 0
+if minimal_balance < 0:
+    membership_fee = abs(minimal_balance)/((minimal_balance_date.month-1 + 7*(minimal_balance_date.year-year))*len(birthdays_members))
+    
+membership_fee = math.ceil(membership_fee)
+    
+# add transfers for fees over 2 years
+for month in range(1,12):
+    transfers_2years[datetime.date(year, month, dom_deposit_members)] = membership_fee*len(birthdays_members)
+for month in range(1,12):
+    transfers_2years[datetime.date(year+1, month, dom_deposit_members)] = membership_fee*len(birthdays_members)    
+
+# sort transfer keys by date (again, cause added more)
+transfers_keys = transfers_2years.keys()
+transfers_keys.sort()
+
+# re-calc account balance
+account_balance[datetime.date(year-1, 12, 31)] = carry_over
+value = carry_over
+for key in transfers_keys:
+    value = value + transfers_2years[key]
+    account_balance[key] = value
+@
+
+\section{2 years overview}
+Looking over 2 years the account balance behaves like in figure \ref{fig:balance2years}. Here we should take 
+\EUR{<% print '%.2f' % membership_fee %>} to stay in the black. At at the end of the second year we have 
+\EUR{<% print '%.2f' % account_balance[transfers_keys[len(transfers_keys)-1]] %>}.
+
+<<fig = True, echo = False, width = '12cm', caption="Account balance over 2 years", label="balance2years">>=
+plt.plot_date(matplotlib.dates.date2num(transfers_keys), map(account_balance.get, transfers_keys), 'b.-', xdate=True)
+plt.xlabel("Date")
+plt.ylabel(u'Value [\u20AC]')
+plt.grid(True)
+ax = plt.axes()
+ax.xaxis.set_major_formatter(fmt)
+ax.xaxis.set_major_locator(loc)
+ax.set_xlim(datetime.date(year, 1, 1), datetime.date(year+1, 12, 31))
+fig = plt.figure(1)
+fig.autofmt_xdate()
+plt.show()
+@
+
+\end{document}
